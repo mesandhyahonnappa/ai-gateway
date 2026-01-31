@@ -1,0 +1,193 @@
+name: Update LiteLLM
+
+on:
+  schedule:
+    # Run daily at 3:00 AM UTC (adjust cron for your timezone)
+    - cron: '0 3 * * *'
+  workflow_dispatch:  # Allows manual triggering from GitHub UI
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'docker-compose.yml'
+      - 'litellm_config.yaml'
+
+env:
+  DOCKER_REGISTRY: docker.litellm.ai/berriai/litellm
+  DOCKER_IMAGE_LATEST: docker.litellm.ai/berriai/litellm:main-latest
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read current version
+        id: version
+        run: |
+          if [ -f "VERSION" ]; then
+            CURRENT_VERSION=$(grep -v '^#' VERSION | head -1 | tr -d '[:space:]')
+            echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "Current version in VERSION file: $CURRENT_VERSION"
+          else
+            echo "current_version=main-latest" >> $GITHUB_OUTPUT
+            echo "⚠️  VERSION file not found, defaulting to main-latest"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull current and latest images
+        run: |
+          echo "Pulling current version: ${{ steps.version.outputs.current_version }}"
+          docker pull ${{ env.DOCKER_REGISTRY }}:${{ steps.version.outputs.current_version }} || echo "Could not pull current version"
+          
+          echo "Pulling latest version for comparison..."
+          docker pull ${{ env.DOCKER_IMAGE_LATEST }} || echo "Could not pull latest"
+
+      - name: Compare versions
+        id: version-check
+        run: |
+          CURRENT_VERSION="${{ steps.version.outputs.current_version }}"
+          CURRENT_IMAGE="${{ env.DOCKER_REGISTRY }}:$CURRENT_VERSION"
+          
+          # Get digests
+          CURRENT_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$CURRENT_IMAGE" 2>/dev/null | cut -d'@' -f2 || echo "")
+          LATEST_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${{ env.DOCKER_IMAGE_LATEST }} 2>/dev/null | cut -d'@' -f2 || echo "")
+          
+          echo "current_digest=$CURRENT_DIGEST" >> $GITHUB_OUTPUT
+          echo "latest_digest=$LATEST_DIGEST" >> $GITHUB_OUTPUT
+          
+          if [ -n "$CURRENT_DIGEST" ] && [ -n "$LATEST_DIGEST" ] && [ "$CURRENT_DIGEST" != "$LATEST_DIGEST" ]; then
+            echo "new_version_available=true" >> $GITHUB_OUTPUT
+            echo "✅ New version detected!"
+            echo "Current: $CURRENT_DIGEST"
+            echo "Latest:  $LATEST_DIGEST"
+          else
+            echo "new_version_available=false" >> $GITHUB_OUTPUT
+            echo "✅ Currently on latest version"
+          fi
+
+      - name: Validate docker-compose.yml
+        run: |
+          # Install docker-compose if needed
+          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          
+          # Validate the compose file
+          docker-compose config --quiet || {
+            echo "❌ docker-compose.yml validation failed"
+            exit 1
+          }
+          echo "✅ docker-compose.yml is valid"
+          
+          # Verify version consistency
+          CURRENT_VERSION="${{ steps.version.outputs.current_version }}"
+          COMPOSE_VERSIONS=$(grep -o "litellm:[^ ]*" docker-compose.yml | sort -u)
+          echo "Versions in docker-compose.yml:"
+          echo "$COMPOSE_VERSIONS"
+          
+          if echo "$COMPOSE_VERSIONS" | grep -q "$CURRENT_VERSION"; then
+            echo "✅ Version consistency check passed"
+          else
+            echo "⚠️  Warning: Version in VERSION file may not match docker-compose.yml"
+          fi
+
+      - name: Test container startup (dry run)
+        run: |
+          # Create a test compose file with modified ports to avoid conflicts
+          cat > docker-compose.test.yml << 'EOF'
+          version: '3.8'
+          services:
+            litellm-test:
+              image: ${{ env.DOCKER_IMAGE }}
+              command: --help
+              environment:
+                - LITELLM_MASTER_KEY=test-key
+          EOF
+          
+          # Test that the image can start
+          docker-compose -f docker-compose.test.yml up --abort-on-container-exit
+          docker-compose -f docker-compose.test.yml down
+          echo "✅ Container test passed"
+
+      - name: Create deployment summary
+        id: summary
+        run: |
+          CURRENT_VERSION="${{ steps.version.outputs.current_version }}"
+          NEW_AVAILABLE="${{ steps.version-check.outputs.new_version_available }}"
+          CURRENT_DIGEST="${{ steps.version-check.outputs.current_digest }}"
+          LATEST_DIGEST="${{ steps.version-check.outputs.latest_digest }}"
+          
+          echo "deployment_info<<EOF" >> $GITHUB_OUTPUT
+          echo "## LiteLLM Version Check" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "**Current Version:** \`$CURRENT_VERSION\`" >> $GITHUB_OUTPUT
+          echo "**Current Digest:** \`$CURRENT_DIGEST\`" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          
+          if [ "$NEW_AVAILABLE" = "true" ]; then
+            echo "### 🆕 New Version Available!" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "**Latest Digest:** \`$LATEST_DIGEST\`" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "### To Update:" >> $GITHUB_OUTPUT
+            echo "1. Check available tags: https://hub.docker.com/r/berriai/litellm/tags" >> $GITHUB_OUTPUT
+            echo "2. Update \`VERSION\` file with the desired version tag" >> $GITHUB_OUTPUT
+            echo "3. Update image tags in \`docker-compose.yml\` (both \`litellm-admin\` and \`litellm-api\`)" >> $GITHUB_OUTPUT
+            echo "4. Run update script: \`./scripts/update-litellm.sh\`" >> $GITHUB_OUTPUT
+          else
+            echo "### ✅ Up to Date" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "You are currently running the latest version." >> $GITHUB_OUTPUT
+          fi
+          
+          echo "" >> $GITHUB_OUTPUT
+          echo "**Check Time:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "---" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Quick Commands:" >> $GITHUB_OUTPUT
+          echo "\`\`\`bash" >> $GITHUB_OUTPUT
+          echo "# Check for new versions" >> $GITHUB_OUTPUT
+          echo "./scripts/check-new-version.sh" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "# Update to latest" >> $GITHUB_OUTPUT
+          echo "./scripts/update-litellm.sh" >> $GITHUB_OUTPUT
+          echo "\`\`\`" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Add deployment summary
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const newVersionAvailable = '${{ steps.version-check.outputs.new_version_available }}' === 'true';
+            const labels = ['update-check', 'automation'];
+            if (newVersionAvailable) {
+              labels.push('update-available');
+            }
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `LiteLLM Version Check - ${new Date().toISOString().split('T')[0]}${newVersionAvailable ? ' - 🆕 Update Available' : ''}`,
+              body: `${{ steps.summary.outputs.deployment_info }}`,
+              labels: labels
+            })
+
+      - name: Notification on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '❌ LiteLLM Update Check Failed',
+              body: 'The automated update check for LiteLLM has failed. Please review the workflow logs.',
+              labels: ['bug', 'automation']
+            })

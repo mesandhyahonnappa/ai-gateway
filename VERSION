@@ -1,0 +1,6 @@
+# LiteLLM Version
+# Update this file when deploying a new version
+# Format: main-v1.81.0-nightly or v1.81.0 (for stable releases)
+# Check available tags: https://hub.docker.com/r/berriai/litellm/tags
+# Or: docker.litellm.ai/berriai/litellm (registry may vary)
+main-v1.81.0-nightly
