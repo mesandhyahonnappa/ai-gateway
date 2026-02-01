@@ -1,0 +1,45 @@
+version: '3.8'
+
+# LiteLLM Admin Instance (Control Plane)
+# - Admin UI and management endpoints
+# - No LLM API endpoints
+# - Recommended to be behind VPN/internal network
+#
+# Usage: docker-compose -f docker-compose.admin.yml up -d
+
+services:
+  litellm-admin:
+    image: docker.litellm.ai/berriai/litellm:main-v1.81.0-nightly
+    container_name: litellm-admin
+    ports:
+      - "4001:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/litellm_config.yaml
+    environment:
+      # Database connection
+      - DATABASE_URL=${DATABASE_URL}
+      # Master key for admin operations
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      # Disable LLM API endpoints (only admin UI and management APIs)
+      - DISABLE_LLM_API_ENDPOINTS=true
+      # Keep Admin UI enabled
+      - DISABLE_ADMIN_UI=false
+      # Keep Admin endpoints enabled
+      - DISABLE_ADMIN_ENDPOINTS=false
+      # Azure credentials (if needed for admin operations)
+      - AZURE_API_BASE=${AZURE_API_BASE:-}
+      - AZURE_API_KEY=${AZURE_API_KEY:-}
+    command: --config /app/litellm_config.yaml
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - litellm-network
+
+networks:
+  litellm-network:
+    driver: bridge

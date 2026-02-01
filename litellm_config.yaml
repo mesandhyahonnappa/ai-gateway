@@ -1,6 +1,6 @@
 general_settings:
-  master_key: "sk-pasand2#"
-  database_url: "postgresql://neondb_owner:npg_hQ04XngzKmaM@ep-purple-hat-a8npmf90-pooler.eastus2.azure.neon.tech/litellmproxy?sslmode=require&channel_binding=require" 
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL 
 model_list:
   - model_name: azure-gpt-4o
     litellm_params:

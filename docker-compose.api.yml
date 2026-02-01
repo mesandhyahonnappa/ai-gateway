@@ -1,0 +1,45 @@
+version: '3.8'
+
+# LiteLLM API Instance (Data Plane)
+# - Serves LLM API requests
+# - No Admin UI or admin endpoints
+# - Can be scaled horizontally
+#
+# Usage: docker-compose -f docker-compose.api.yml up -d
+
+services:
+  litellm-api:
+    image: docker.litellm.ai/berriai/litellm:main-v1.81.0-nightly
+    container_name: litellm-api
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/litellm_config.yaml
+    environment:
+      # Database connection
+      - DATABASE_URL=${DATABASE_URL}
+      # Master key (required for database operations)
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      # Disable Admin UI
+      - DISABLE_ADMIN_UI=true
+      # Disable Admin endpoints
+      - DISABLE_ADMIN_ENDPOINTS=true
+      # Keep LLM API endpoints enabled
+      - DISABLE_LLM_API_ENDPOINTS=false
+      # Azure credentials for LLM API calls
+      - AZURE_API_BASE=${AZURE_API_BASE:-}
+      - AZURE_API_KEY=${AZURE_API_KEY:-}
+    command: --config /app/litellm_config.yaml
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - litellm-network
+
+networks:
+  litellm-network:
+    driver: bridge
