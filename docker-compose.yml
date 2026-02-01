@@ -1,51 +1,20 @@
-version: '3.8'
-
-# LiteLLM Combined Configuration (Admin + API)
-# For running both services together locally
+# LiteLLM Proxy Configuration
+# Single instance with Admin UI + API (free/open-source version)
 #
-# Individual files available for separate deployment:
-#   - docker-compose.admin.yml  (Control Plane - Admin UI)
-#   - docker-compose.api.yml    (Data Plane - LLM API)
+# Usage: docker-compose up -d
 #
-# Usage:
-#   Both services:  docker-compose up -d
-#   Admin only:     docker-compose -f docker-compose.admin.yml up -d
-#   API only:       docker-compose -f docker-compose.api.yml up -d
+# Endpoints:
+#   - Admin UI: http://localhost:4000/ui
+#   - API:      http://localhost:4000/v1/chat/completions
+#
+# Note: Separating Admin and API into different instances requires Enterprise license
 #
 # Version: main-v1.81.0-nightly (see VERSION file)
 
 services:
-  # Admin Instance (Control Plane)
-  litellm-admin:
+  litellm:
     image: docker.litellm.ai/berriai/litellm:main-v1.81.0-nightly
-    container_name: litellm-admin
-    ports:
-      - "4001:4000"
-    volumes:
-      - ./litellm_config.yaml:/app/litellm_config.yaml
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - DISABLE_LLM_API_ENDPOINTS=true
-      - DISABLE_ADMIN_UI=false
-      - DISABLE_ADMIN_ENDPOINTS=false
-      - AZURE_API_BASE=${AZURE_API_BASE:-}
-      - AZURE_API_KEY=${AZURE_API_KEY:-}
-    command: --config /app/litellm_config.yaml
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - litellm-network
-
-  # API Instance (Data Plane)
-  litellm-api:
-    image: docker.litellm.ai/berriai/litellm:main-v1.81.0-nightly
-    container_name: litellm-api
+    container_name: litellm
     ports:
       - "4000:4000"
     volumes:
@@ -53,15 +22,13 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - DISABLE_ADMIN_UI=true
-      - DISABLE_ADMIN_ENDPOINTS=true
-      - DISABLE_LLM_API_ENDPOINTS=false
       - AZURE_API_BASE=${AZURE_API_BASE:-}
       - AZURE_API_KEY=${AZURE_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     command: --config /app/litellm_config.yaml
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
       interval: 30s
       timeout: 10s
       retries: 3

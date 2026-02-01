@@ -2,9 +2,22 @@ general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL 
 model_list:
-  - model_name: azure-gpt-4o
+  # Azure OpenAI - GPT-4o Mini
+  - model_name: gpt-4o-mini
     litellm_params:
-      model: azure/<your-azure-model-deployment>
-      api_base: os.environ/AZURE_API_BASE # runs os.getenv("AZURE_API_BASE")
-      api_key: os.environ/AZURE_API_KEY # runs os.getenv("AZURE_API_KEY")
-      api_version: "2025-01-01-preview"
+      model: azure/gpt-4o-mini
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: "2024-08-01-preview"
+
+  # Anthropic - Claude 3.5 Sonnet (latest)
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # Anthropic - Claude 3.5 Haiku (fast & cheap)
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-3-5-haiku-20241022
+      api_key: os.environ/ANTHROPIC_API_KEY
